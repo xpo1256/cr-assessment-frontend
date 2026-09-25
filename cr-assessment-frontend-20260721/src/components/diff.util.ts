@@ -27,7 +27,9 @@ export function computeDiff(baseline: LineItem[], proposed: LineItem[]): DiffRow
 			rows.push({ sku: b.sku, kind: 'removed', baseline: b });
 			continue;
 		}
-		const changed = b.unitPrice !== p.unitPrice;
+		const changed = b.quantity !== p.quantity ||
+			b.unitPrice !== p.unitPrice ||
+			b.description !== p.description;
 		rows.push({ sku: b.sku, kind: changed ? 'changed' : 'unchanged', baseline: b, proposed: p });
 	}
 	for (const p of proposed) {

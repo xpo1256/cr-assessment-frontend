@@ -23,7 +23,7 @@ export class CrListComponent implements OnInit {
 	statusFilter: CrStatus | 'ALL' = 'ALL';
 	readonly statuses: (CrStatus | 'ALL')[] = ['ALL', 'DRAFT', 'SUBMITTED', 'PENDING_APPROVAL', 'APPROVED', 'APPLIED', 'REJECTED', 'CANCELLED'];
 
-	constructor(private readonly api: CrApiService, private readonly session: SessionService) {}
+	constructor(private readonly api: CrApiService, private readonly session: SessionService) { }
 
 	ngOnInit(): void {
 		void this.load();
@@ -46,7 +46,8 @@ export class CrListComponent implements OnInit {
 	/** Rows to render, after applying the active status filter. */
 	get visibleRows(): CrSummary[] {
 		const rows = this.state.data ?? [];
-		// TODO: narrow `rows` by `this.statusFilter` ('ALL' shows everything).
-		return rows;
+		return this.statusFilter === 'ALL'
+			? rows
+			: rows.filter((cr) => cr.status === this.statusFilter);
 	}
 }

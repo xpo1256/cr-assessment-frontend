@@ -1,18 +1,14 @@
 import { Component, Input, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormControl, ReactiveFormsModule } from '@angular/forms';
+import { FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
 import { CrApiService } from '../../api/cr-api.service';
 import { SessionService } from '../../session/session.service';
 import { CrDetail, TimelineEntry } from '../../models/cr.models';
 import { idle, loading, ViewState } from '../../common/view-state';
 import { computeDiff, DiffRow } from '../diff.util';
 import { formatMoney } from '../../common/money.util';
+import { canApprovePolicy } from '../../common/permissions';
 
-/**
- * Change Request DETAIL page: loads a CR and renders the diff/preview, the approval timeline, and
- * permission-aware Approve/Reject actions. `load`, the diff binding, and the template skeleton are
- * provided; the timeline ordering, permission gating, actions, and reject validation are yours.
- */
 @Component({
 	selector: 'app-cr-detail',
 	standalone: true,
@@ -25,8 +21,11 @@ export class CrDetailComponent implements OnInit {
 	state: ViewState<CrDetail> = idle();
 	submitting = false;
 	actionError?: string;
-	// TODO: add validation so the form is invalid until a reason is entered.
-	rejectControl = new FormControl('', { nonNullable: true });
+
+	rejectControl = new FormControl('', {
+		nonNullable: true,
+		validators: [Validators.required],
+	});
 
 	constructor(private readonly api: CrApiService, private readonly session: SessionService) {}
 
@@ -53,20 +52,20 @@ export class CrDetailComponent implements OnInit {
 		return this.detail ? computeDiff(this.detail.baselineLineItems, this.detail.proposedLineItems) : [];
 	}
 
-	/** Approval timeline, oldest-first. */
 	get timeline(): TimelineEntry[] {
-		// TODO: return the audit entries ordered chronologically (oldest first).
-		return this.detail?.audit ?? [];
+		return [...(this.detail?.audit ?? [])].sort(
+			(a, b) => Date.parse(a.at) - Date.parse(b.at),
+		);
 	}
 
-	/** Whether the current user may approve the loaded CR. */
 	get canApprove(): boolean {
-		// NOTE: this only looks at the CR status. The UI must also respect the user's permissions.
-		return this.detail?.status === 'PENDING_APPROVAL';
+		return this.detail?.status === 'PENDING_APPROVAL' &&
+			canApprovePolicy(this.session.user);
 	}
 
 	get canReject(): boolean {
-		return this.detail?.status === 'PENDING_APPROVAL';
+		return this.detail?.status === 'PENDING_APPROVAL' &&
+			canApprovePolicy(this.session.user);
 	}
 
 	fmt(amount: number): string {
@@ -74,13 +73,51 @@ export class CrDetailComponent implements OnInit {
 	}
 
 	async approve(): Promise<void> {
-		// TODO: perform the approve action through the API and reflect the outcome in the view.
-		throw new Error('approve() not implemented');
+		if (!this.canApprove || this.submitting || !this.detail) return;
+
+		this.submitting = true;
+		this.actionError = undefined;
+
+		try {
+			const updated = await this.api.approve(
+				this.session.user,
+				this.detail.id,
+				new Date().toISOString(),
+			);
+			this.state = { status: 'loaded', data: updated };
+		} catch (err) {
+			const message = (err as Error).message;
+			await this.load();
+			this.actionError = message;
+		} finally {
+			this.submitting = false;
+		}
 	}
 
 	async reject(): Promise<void> {
-		// TODO: require a valid rejectControl, then perform the reject action through the API and
-		//       reflect the outcome in the view.
-		throw new Error('reject() not implemented');
+		this.rejectControl.markAsTouched();
+		const reason = this.rejectControl.value.trim();
+
+		if (!reason || this.rejectControl.invalid || !this.canReject ||
+			this.submitting || !this.detail) return;
+
+		this.submitting = true;
+		this.actionError = undefined;
+
+		try {
+			const updated = await this.api.reject(
+				this.session.user,
+				this.detail.id,
+				new Date().toISOString(),
+				reason,
+			);
+			this.state = { status: 'loaded', data: updated };
+		} catch (err) {
+			const message = (err as Error).message;
+			await this.load();
+			this.actionError = message;
+		} finally {
+			this.submitting = false;
+		}
 	}
 }
